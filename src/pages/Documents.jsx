@@ -125,14 +125,15 @@ export default function Documents() {
     const isContrat = genForm.type === 'Contrat de formation'
     const isRecu = genForm.type === 'Reçu de paiement'
 
+    const PYTHON_BASE = import.meta.env.VITE_PYTHON_URL || '/api'
     const endpoint = isContrat
-      ? '/api/documents/contrat-formation'
+      ? `${PYTHON_BASE}/documents/contrat-formation`
       : isAttestation && genForm.attestVersion === 'formelle'
-        ? '/api/documents/attestation-formelle'
+        ? `${PYTHON_BASE}/documents/attestation-formelle`
         : isFacture
-          ? '/api/documents/facture'
+          ? `${PYTHON_BASE}/documents/facture`
           : isRecu
-            ? '/api/documents/recu'
+            ? `${PYTHON_BASE}/documents/recu`
             : null
 
     if (endpoint) {

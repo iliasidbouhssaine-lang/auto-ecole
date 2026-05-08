@@ -171,7 +171,8 @@ export default function ClientDetail() {
     setGeneratingContract(true)
     setContractError('')
     try {
-      const res = await fetch('/api/documents/contrat-formation', {
+      const PYTHON_BASE = import.meta.env.VITE_PYTHON_URL || '/api'
+      const res = await fetch(`${PYTHON_BASE}/documents/contrat-formation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(client),
