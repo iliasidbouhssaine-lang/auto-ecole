@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, CalendarDays, CreditCard,
-  ClipboardCheck, FileText, Car, LogOut,
+  ClipboardCheck, FileText, Car, LogOut, X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -14,7 +14,7 @@ const navItems = [
   { path: '/documents', label: 'Documents', icon: FileText },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
@@ -24,9 +24,17 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-40 shadow-2xl">
+    <aside className={`w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-40 shadow-2xl transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
       {/* Yellow top accent */}
       <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 flex-shrink-0" />
+
+      {/* Close button (mobile only) */}
+      <button
+        onClick={onClose}
+        className="md:hidden absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+      >
+        <X size={18} />
+      </button>
 
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-700/60">

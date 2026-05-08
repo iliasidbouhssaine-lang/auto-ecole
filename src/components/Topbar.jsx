@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, ChevronDown, LogOut, KeyRound, Loader2 } from 'lucide-react'
+import { Search, ChevronDown, LogOut, KeyRound, Loader2, Menu } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useClients } from '../context/ClientsContext'
@@ -15,7 +15,7 @@ const titles = {
   '/documents': 'Documents',
 }
 
-export default function Topbar() {
+export default function Topbar({ onMenuClick }) {
   const { pathname } = useLocation()
   const { user, logout, changePassword } = useAuth()
   const { clients } = useClients()
@@ -94,9 +94,15 @@ export default function Topbar() {
   }
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
       <div className="flex items-center gap-3">
-        <div className="w-1 h-6 bg-amber-500 rounded-full" />
+        <button
+          onClick={onMenuClick}
+          className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="w-1 h-6 bg-amber-500 rounded-full hidden md:block" />
         <div>
           <h2 className="font-bold text-slate-800 text-base leading-tight">{title}</h2>
           <p className="text-xs text-slate-400">
