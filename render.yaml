@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: auto-ecole-node
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PYTHON_API_URL
+        fromService:
+          name: auto-ecole-python
+          type: pserv
+          property: hostport
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: auto-ecole-python
+    env: python
+    buildCommand: pip install -r python/requirements.txt
+    startCommand: cd python && uvicorn main:app --host 0.0.0.0 --port $PORT
