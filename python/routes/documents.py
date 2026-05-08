@@ -39,7 +39,7 @@ ContractRequest = ClientDocRequest
 async def contrat_formation(body: ContractRequest):
     try:
         loop = asyncio.get_running_loop()
-        pdf_bytes = await loop.run_in_executor(None, generate_contract_pdf, body.dict())
+        pdf_bytes = await loop.run_in_executor(None, generate_contract_pdf, body.model_dump())
         nom = (body.nomComplet or "client").replace(" ", "_")
         return Response(
             content=pdf_bytes,
@@ -55,7 +55,7 @@ async def contrat_formation(body: ContractRequest):
 async def attestation_formelle(body: ClientDocRequest):
     try:
         loop = asyncio.get_running_loop()
-        pdf_bytes = await loop.run_in_executor(None, generate_attestation_formel_pdf, body.dict())
+        pdf_bytes = await loop.run_in_executor(None, generate_attestation_formel_pdf, body.model_dump())
         nom = (body.nomComplet or "client").replace(" ", "_")
         return Response(
             content=pdf_bytes,
@@ -71,7 +71,7 @@ async def attestation_formelle(body: ClientDocRequest):
 async def recu(body: ClientDocRequest):
     try:
         loop = asyncio.get_running_loop()
-        pdf_bytes = await loop.run_in_executor(None, generate_recu_pdf, body.dict())
+        pdf_bytes = await loop.run_in_executor(None, generate_recu_pdf, body.model_dump())
         nom = (body.nomComplet or "client").replace(" ", "_")
         return Response(
             content=pdf_bytes,
@@ -87,7 +87,7 @@ async def recu(body: ClientDocRequest):
 async def facture(body: ClientDocRequest):
     try:
         loop = asyncio.get_running_loop()
-        pdf_bytes = await loop.run_in_executor(None, generate_facture_pdf, body.dict())
+        pdf_bytes = await loop.run_in_executor(None, generate_facture_pdf, body.model_dump())
         nom = (body.nomComplet or f"{body.prenom} {body.nom}".strip() or "client").replace(" ", "_")
         return Response(
             content=pdf_bytes,
