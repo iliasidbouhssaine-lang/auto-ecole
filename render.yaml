@@ -10,12 +10,12 @@ services:
       - key: PYTHON_API_URL
         fromService:
           name: auto-ecole-python
-          type: pserv
-          property: hostport
+          type: web
+          property: host
       - key: NODE_ENV
         value: production
 
-  - type: pserv
+  - type: web
     name: auto-ecole-python
     env: python
     buildCommand: pip install -r python/requirements.txt

@@ -34,7 +34,7 @@ async function initDB() {
 initDB().catch(e => console.error('DB init error:', e))
 
 const PYTHON_URL = process.env.PYTHON_API_URL
-  ? `http://${process.env.PYTHON_API_URL}`
+  ? `https://${process.env.PYTHON_API_URL}`
   : 'http://localhost:8000'
 
 app.use('/api/documents', createProxyMiddleware({
