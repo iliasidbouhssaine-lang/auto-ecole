@@ -148,11 +148,9 @@ export default function Documents() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(90000),
         })
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}))
-          throw new Error(json.detail || 'Erreur lors de la génération')
-        }
+        if (!res.ok) throw new Error('generation_failed')
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -177,8 +175,8 @@ export default function Documents() {
         }
         setDocuments(prev => { const updated = [newDoc, ...prev]; saveDocuments(updated); return updated })
         setShowGenModal(false)
-      } catch (e) {
-        setGenError(e.message)
+      } catch {
+        setShowGenModal(false)
       } finally {
         setGeneratingModal(false)
       }

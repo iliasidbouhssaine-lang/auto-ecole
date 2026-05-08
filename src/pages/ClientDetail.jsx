@@ -176,11 +176,9 @@ export default function ClientDetail() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(client),
+        signal: AbortSignal.timeout(90000),
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json.detail || 'Erreur lors de la génération')
-      }
+      if (!res.ok) throw new Error('generation_failed')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -190,8 +188,8 @@ export default function ClientDetail() {
       URL.revokeObjectURL(url)
       // Sauvegarder la date de génération du contrat en DB
       fetch(`/api/clients/${client.id}/contrat-date`, { method: 'PATCH' }).catch(() => {})
-    } catch (e) {
-      setContractError(e.message)
+    } catch {
+      // silently close on error
     } finally {
       setGeneratingContract(false)
     }
