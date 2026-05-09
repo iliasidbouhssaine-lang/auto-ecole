@@ -2,11 +2,10 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Phone, Mail, MapPin, CreditCard, Calendar, User,
-  Clock, CheckCircle2, FileText, FileCheck, FileBadge, FileSignature, MessageSquare, Globe, BadgeCheck, Info,
-  Loader2, Pencil, X, Check, Hash, Download, AlertCircle, Trophy, RotateCcw, PauseCircle
+  Clock, CheckCircle2, FileText, MessageSquare, Globe, BadgeCheck, Info,
+  Loader2, Pencil, X, Check, Hash, Trophy, RotateCcw, PauseCircle
 } from 'lucide-react'
 import Modal from '../components/Modal'
-import { documents } from '../data/documents'
 import { usePayments } from '../context/PaymentsContext'
 import { useAttendance } from '../context/AttendanceContext'
 import StatusBadge from '../components/StatusBadge'
@@ -16,7 +15,6 @@ import { formatDate, formatCurrency, getInitials, getProgress } from '../utils/h
 const tabs = [
   { id: 'historique', label: 'Présences', icon: CheckCircle2 },
   { id: 'paiements', label: 'Paiements', icon: CreditCard },
-  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'infos', label: 'Informations', icon: Info },
   { id: 'remarques', label: 'Remarques', icon: MessageSquare },
 ]
@@ -44,9 +42,6 @@ export default function ClientDetail() {
   const [remarkEdit, setRemarkEdit] = useState(false)
   const [remarkText, setRemarkText] = useState('')
   const [savingRemark, setSavingRemark] = useState(false)
-
-  const [generatingContract, setGeneratingContract] = useState(false)
-  const [contractError, setContractError] = useState('')
 
   const [showTerminerModal, setShowTerminerModal] = useState(false)
   const [terminerSaving, setTerminerSaving] = useState(false)
@@ -86,8 +81,6 @@ export default function ClientDetail() {
 
   const clientAttendance = attendance.filter(a => a.clientId === client.id)
   const clientPayments = payments.filter(p => p.clientId === client.id)
-  const clientDocuments = documents.filter(d => d.clientId === client.id)
-
   const totalPaye = clientPayments.reduce((sum, p) => sum + p.montant, 0)
   const heuresEffectuees = clientAttendance.filter(a => a.statut === 'présent').length
   const hProgress = getProgress(heuresEffectuees, client.heuresPrevues)
@@ -168,34 +161,6 @@ export default function ClientDetail() {
       alert('Erreur lors de la mise à jour.')
     } finally {
       setTerminerSaving(false)
-    }
-  }
-
-  async function handleGenerateContract() {
-    setGeneratingContract(true)
-    setContractError('')
-    try {
-      const PYTHON_BASE = import.meta.env.VITE_PYTHON_URL || '/api'
-      const res = await fetch(`${PYTHON_BASE}/documents/contrat-formation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(client),
-        signal: AbortSignal.timeout(90000),
-      })
-      if (!res.ok) throw new Error('generation_failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `contrat_${(client.nomComplet || 'client').replace(/ /g, '_')}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
-      // Sauvegarder la date de génération du contrat en DB
-      fetch(`/api/clients/${client.id}/contrat-date`, { method: 'PATCH' }).catch(() => {})
-    } catch {
-      // silently close on error
-    } finally {
-      setGeneratingContract(false)
     }
   }
 
@@ -378,73 +343,6 @@ export default function ClientDetail() {
                   </div>
                 ))
               )}
-            </div>
-          )}
-
-          {/* ── Documents ── */}
-          {activeTab === 'documents' && (
-            <div className="space-y-4">
-              {/* Documents déjà générés */}
-              {clientDocuments.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                    Documents générés ({clientDocuments.length})
-                  </p>
-                  <div className="space-y-2">
-                    {clientDocuments.map(d => {
-                      const docMap = {
-                        'Contrat de formation':           { Icon: FileSignature, color: 'bg-amber-100 text-amber-600' },
-                        'Reçu de paiement':               { Icon: FileCheck,     color: 'bg-emerald-100 text-emerald-600' },
-                        'Facture':                        { Icon: FileText,      color: 'bg-purple-100 text-purple-600' },
-                        'Attestation de fin de formation':{ Icon: FileBadge,     color: 'bg-blue-100 text-blue-600' },
-                      }
-                      const { Icon, color } = docMap[d.type] || { Icon: FileText, color: 'bg-slate-100 text-slate-500' }
-                      return (
-                        <div key={d.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}>
-                            <Icon size={15} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-700">{d.type}</p>
-                            <p className="text-xs text-slate-400">{formatDate(d.date)}</p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {clientDocuments.length === 0 && (
-                <p className="text-slate-400 text-sm text-center py-4">Aucun document généré pour ce client</p>
-              )}
-
-              {/* Générer un nouveau contrat */}
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Générer</p>
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-amber-50 border border-amber-200">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileSignature size={18} className="text-amber-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">Contrat de formation</p>
-                    <p className="text-xs text-slate-500">Contrat officiel prêt à signer</p>
-                  </div>
-                  <button
-                    onClick={handleGenerateContract}
-                    disabled={generatingContract}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {generatingContract ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                    {generatingContract ? 'Génération...' : 'Télécharger PDF'}
-                  </button>
-                </div>
-                {contractError && (
-                  <p className="flex items-center gap-1.5 text-xs text-red-600 mt-2">
-                    <AlertCircle size={12} /> {contractError}
-                  </p>
-                )}
-              </div>
             </div>
           )}
 
