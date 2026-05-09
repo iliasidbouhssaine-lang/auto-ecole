@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, ChevronDown, LogOut, KeyRound, Loader2, Menu, History, RotateCcw } from 'lucide-react'
+import { Search, ChevronDown, LogOut, KeyRound, Loader2, Menu, History, RotateCcw, Trash2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useClients } from '../context/ClientsContext'
@@ -56,6 +56,13 @@ export default function Topbar({ onMenuClick }) {
 
   async function handleRestore(id) {
     await fetch(`/api/clients/${id}/restore`, { method: 'POST' })
+    const res = await fetch('/api/clients/deleted')
+    setDeletedClients(await res.json())
+  }
+
+  async function handlePermanentDelete(id, nom) {
+    if (!confirm(`Supprimer définitivement ${nom} ? Cette action est irréversible.`)) return
+    await fetch(`/api/clients/${id}/permanent`, { method: 'DELETE' })
     const res = await fetch('/api/clients/deleted')
     setDeletedClients(await res.json())
   }
@@ -230,12 +237,21 @@ export default function Topbar({ onMenuClick }) {
                   <p className="text-sm font-medium text-slate-700 truncate">{c.nomComplet}</p>
                   <p className="text-xs text-slate-400">{c.telephone} · {c.categorie}</p>
                 </div>
-                <button
-                  onClick={() => handleRestore(c.id)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                >
-                  <RotateCcw size={12} /> Restaurer
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handleRestore(c.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <RotateCcw size={12} /> Restaurer
+                  </button>
+                  <button
+                    onClick={() => handlePermanentDelete(c.id, c.nomComplet)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="Supprimer définitivement"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

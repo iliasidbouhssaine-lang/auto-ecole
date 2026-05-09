@@ -223,6 +223,15 @@ app.post('/api/clients/:id/restore', async (req, res) => {
   res.json(toClient(rows[0]))
 })
 
+app.delete('/api/clients/:id/permanent', async (req, res) => {
+  const { rowCount } = await pool.query(
+    'DELETE FROM clients WHERE id = $1 AND deleted_at IS NOT NULL',
+    [req.params.id]
+  )
+  if (!rowCount) return res.status(404).json({ error: 'Client introuvable' })
+  res.json({ success: true })
+})
+
 app.patch('/api/clients/:id/contrat-date', async (req, res) => {
   const id = parseInt(req.params.id)
   const today = todayMorocco()
