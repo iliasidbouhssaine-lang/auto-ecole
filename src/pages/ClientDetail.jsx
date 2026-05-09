@@ -50,6 +50,7 @@ export default function ClientDetail() {
 
   const [showTerminerModal, setShowTerminerModal] = useState(false)
   const [terminerSaving, setTerminerSaving] = useState(false)
+  const [showPaymentWarning, setShowPaymentWarning] = useState(false)
 
   useEffect(() => {
     setFetchLoading(true)
@@ -250,7 +251,7 @@ export default function ClientDetail() {
                     </span>
                   )}
                   <button
-                    onClick={() => setShowTerminerModal(true)}
+                    onClick={() => totalPaye < client.montantTotal && (client.statut === 'actif' || client.statut === 'rattrapage') ? setShowPaymentWarning(true) : setShowTerminerModal(true)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-all"
                     title="Modifier le statut"
                   >
@@ -662,6 +663,26 @@ export default function ClientDetail() {
           )}
         </div>
       </div>
+
+      <Modal isOpen={showPaymentWarning} onClose={() => setShowPaymentWarning(false)} title="Paiement incomplet" size="sm">
+        <div className="text-center py-2">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <CreditCard size={22} className="text-red-500" />
+          </div>
+          <p className="text-sm text-slate-500 mb-2">
+            Le paiement n'est pas complet. Le statut ne peut pas être modifié tant que le solde n'est pas réglé.
+          </p>
+          <p className="text-base font-bold text-red-500 mb-4">
+            Reste à payer : {formatCurrency(montantRestant)}
+          </p>
+          <button
+            onClick={() => setShowPaymentWarning(false)}
+            className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+          >
+            Compris
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showTerminerModal}

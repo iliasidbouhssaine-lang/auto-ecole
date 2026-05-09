@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle } from 'lucide-react'
+import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle, CreditCard } from 'lucide-react'
 import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
 import SearchBar from '../components/SearchBar'
@@ -95,6 +95,7 @@ export default function Clients() {
   const [step, setStep] = useState(1)
   const [terminerTarget, setTerminerTarget] = useState(null)
   const [terminerSaving, setTerminerSaving] = useState(false)
+  const [paymentWarning, setPaymentWarning] = useState(null)
 
   const set = (key, val) => setForm(p => ({ ...p, [key]: val }))
 
@@ -298,7 +299,7 @@ export default function Clients() {
                           <StatusBadge status={c.statut} />
                           {(c.statut === 'actif' || c.statut === 'rattrapage') && (
                             <button
-                              onClick={() => setTerminerTarget(c)}
+                              onClick={() => c.montantPaye < c.montantTotal ? setPaymentWarning(c) : setTerminerTarget(c)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
                               title="Modifier le statut"
                             >
@@ -436,6 +437,30 @@ export default function Clients() {
                 <Loader2 size={14} className="animate-spin" /> Mise à jour...
               </div>
             )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal paiement incomplet */}
+      <Modal isOpen={!!paymentWarning} onClose={() => setPaymentWarning(null)} title="Paiement incomplet" size="sm">
+        {paymentWarning && (
+          <div className="text-center py-2">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CreditCard size={22} className="text-red-500" />
+            </div>
+            <p className="text-sm text-slate-700 font-semibold mb-1">{paymentWarning.nomComplet}</p>
+            <p className="text-sm text-slate-500 mb-2">
+              Le paiement n'est pas complet. Le statut ne peut pas être modifié tant que le solde n'est pas réglé.
+            </p>
+            <p className="text-base font-bold text-red-500 mb-4">
+              Reste à payer : {formatCurrency(paymentWarning.montantTotal - paymentWarning.montantPaye)}
+            </p>
+            <button
+              onClick={() => setPaymentWarning(null)}
+              className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+            >
+              Compris
+            </button>
           </div>
         )}
       </Modal>
