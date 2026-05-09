@@ -146,8 +146,11 @@ export default function ClientDetail() {
   }
 
   async function handleTerminer(result) {
-    // réussite → terminé, rattrapage → actif (reste actif), suspendu → suspendu
-    const newStatut = result === 'réussite' ? 'terminé' : result === 'suspendu' ? 'suspendu' : 'actif'
+    let newStatut
+    if (result === 'réussite') newStatut = 'terminé'
+    else if (result === 'rattrapage') newStatut = 'rattrapage'
+    else if (result === 'echec') newStatut = 'suspendu'
+    else newStatut = 'actif'
     if (newStatut === client.statut) { setShowTerminerModal(false); return }
     setTerminerSaving(true)
     try {
@@ -241,6 +244,11 @@ export default function ClientDetail() {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={client.statut} size="md" />
+                  {client.statut === 'rattrapage' && (
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white text-xs font-bold" title="Rattrapage">
+                      R
+                    </span>
+                  )}
                   <button
                     onClick={() => setShowTerminerModal(true)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-all"
@@ -655,57 +663,88 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      <Modal isOpen={showTerminerModal} onClose={() => !terminerSaving && setShowTerminerModal(false)} title={client.statut === 'actif' ? 'Clôturer la formation' : 'Modifier le statut'} size="sm">
+      <Modal
+        isOpen={showTerminerModal}
+        onClose={() => !terminerSaving && setShowTerminerModal(false)}
+        title={
+          client.statut === 'actif' ? 'Clôturer la formation' :
+          client.statut === 'rattrapage' ? 'Résultat du rattrapage' :
+          'Modifier le statut'
+        }
+        size="sm"
+      >
         <p className="text-sm text-slate-500 mb-5">
           Sélectionnez le nouveau statut de <strong className="text-slate-700">{client.nomComplet}</strong>.
         </p>
         <div className="space-y-3">
-          <button
-            onClick={() => handleTerminer('réussite')}
-            disabled={terminerSaving}
-            className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left disabled:opacity-50"
-          >
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Trophy size={18} className="text-white" />
-            </div>
-            <div>
-              <p className="font-semibold text-emerald-800 text-sm">Réussite</p>
-              <p className="text-xs text-emerald-600 mt-0.5">L'élève a réussi son examen de permis</p>
-            </div>
-            {terminerSaving && <Loader2 size={14} className="animate-spin ml-auto text-emerald-600" />}
-          </button>
+          {/* Réussite — for actif or rattrapage */}
+          {(client.statut === 'actif' || client.statut === 'rattrapage') && (
+            <button
+              onClick={() => handleTerminer('réussite')}
+              disabled={terminerSaving}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Trophy size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-emerald-800 text-sm">Réussite</p>
+                <p className="text-xs text-emerald-600 mt-0.5">L'élève a réussi son examen de permis</p>
+              </div>
+              {terminerSaving && <Loader2 size={14} className="animate-spin ml-auto text-emerald-600" />}
+            </button>
+          )}
 
-          <button
-            onClick={() => handleTerminer('rattrapage')}
-            disabled={terminerSaving}
-            className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors text-left disabled:opacity-50"
-          >
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <RotateCcw size={18} className="text-white" />
-            </div>
-            <div>
-              <p className="font-semibold text-orange-800 text-sm">
-                {client.statut === 'actif' ? 'Rattrapage' : 'Réactiver'}
-              </p>
-              <p className="text-xs text-orange-600 mt-0.5">
-                {client.statut === 'actif' ? "L'élève doit repasser une partie de l'examen" : 'Remettre en formation → statut "Actif"'}
-              </p>
-            </div>
-          </button>
+          {/* Rattrapage — only for actif */}
+          {client.statut === 'actif' && (
+            <button
+              onClick={() => handleTerminer('rattrapage')}
+              disabled={terminerSaving}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors text-left disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <RotateCcw size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-orange-800 text-sm">Rattrapage</p>
+                <p className="text-xs text-orange-600 mt-0.5">L'élève doit repasser une partie de l'examen</p>
+              </div>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleTerminer('suspendu')}
-            disabled={terminerSaving}
-            className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 transition-colors text-left disabled:opacity-50"
-          >
-            <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <PauseCircle size={18} className="text-white" />
-            </div>
-            <div>
-              <p className="font-semibold text-red-800 text-sm">Suspendu</p>
-              <p className="text-xs text-red-600 mt-0.5">La formation est suspendue ou abandonnée</p>
-            </div>
-          </button>
+          {/* Échec — only for rattrapage */}
+          {client.statut === 'rattrapage' && (
+            <button
+              onClick={() => handleTerminer('echec')}
+              disabled={terminerSaving}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 transition-colors text-left disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <PauseCircle size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-red-800 text-sm">Échec</p>
+                <p className="text-xs text-red-600 mt-0.5">Formation échouée → statut "Suspendu"</p>
+              </div>
+            </button>
+          )}
+
+          {/* Réactiver — for terminé or suspendu */}
+          {(client.statut === 'terminé' || client.statut === 'suspendu') && (
+            <button
+              onClick={() => handleTerminer('reactiver')}
+              disabled={terminerSaving}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <RotateCcw size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-blue-800 text-sm">Réactiver</p>
+                <p className="text-xs text-blue-600 mt-0.5">Remettre en formation → statut "Actif"</p>
+              </div>
+            </button>
+          )}
         </div>
         <div className="mt-5 pt-4 border-t border-slate-100 flex justify-end">
           <button

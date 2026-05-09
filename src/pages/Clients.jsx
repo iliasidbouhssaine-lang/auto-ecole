@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, PauseCircle, Flag, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle } from 'lucide-react'
 import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
 import SearchBar from '../components/SearchBar'
@@ -100,7 +100,11 @@ export default function Clients() {
 
   async function handleTerminerClient(result) {
     if (!terminerTarget) return
-    const newStatut = result === 'réussite' ? 'terminé' : result === 'suspendu' ? 'suspendu' : 'actif'
+    let newStatut
+    if (result === 'réussite') newStatut = 'terminé'
+    else if (result === 'rattrapage') newStatut = 'rattrapage'
+    else if (result === 'echec') newStatut = 'suspendu'
+    else newStatut = 'actif'
     if (newStatut === terminerTarget.statut) { setTerminerTarget(null); return }
     setTerminerSaving(true)
     try {
@@ -131,7 +135,7 @@ export default function Clients() {
 
   const stats = {
     total: clients.length,
-    actif: clients.filter(c => c.statut === 'actif').length,
+    actif: clients.filter(c => c.statut === 'actif' || c.statut === 'rattrapage').length,
     termine: clients.filter(c => c.statut === 'terminé').length,
     suspendu: clients.filter(c => c.statut === 'suspendu').length,
   }
@@ -199,6 +203,7 @@ export default function Clients() {
               onChange={setStatusFilter}
               options={[
                 { value: 'actif', label: 'Actif' },
+                { value: 'rattrapage', label: 'Rattrapage' },
                 { value: 'inactif', label: 'Inactif' },
                 { value: 'suspendu', label: 'Suspendu' },
                 { value: 'terminé', label: 'Terminé' },
@@ -291,11 +296,11 @@ export default function Clients() {
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-1.5">
                           <StatusBadge status={c.statut} />
-                          {c.statut === 'actif' && (
+                          {(c.statut === 'actif' || c.statut === 'rattrapage') && (
                             <button
                               onClick={() => setTerminerTarget(c)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50"
-                              title="Clôturer la formation"
+                              title="Modifier le statut"
                             >
                               <Flag size={12} />
                             </button>
@@ -341,62 +346,90 @@ export default function Clients() {
         </div>
       </SectionCard>
 
-      {/* Modal clôture / modification statut */}
+      {/* Modal statut */}
       <Modal
         isOpen={!!terminerTarget}
         onClose={() => setTerminerTarget(null)}
-        title={terminerTarget?.statut === 'actif' ? 'Clôturer la formation' : 'Modifier le statut'}
+        title={
+          terminerTarget?.statut === 'actif' ? 'Clôturer la formation' :
+          terminerTarget?.statut === 'rattrapage' ? 'Résultat du rattrapage' :
+          'Modifier le statut'
+        }
         size="sm"
       >
         {terminerTarget && (
           <div>
             <p className="text-sm text-slate-600 mb-4">
-              Quel est le résultat de la formation de <span className="font-semibold text-slate-800">{terminerTarget.nomComplet}</span> ?
+              Quel est le résultat pour <span className="font-semibold text-slate-800">{terminerTarget.nomComplet}</span> ?
             </p>
             <div className="grid grid-cols-1 gap-3">
-              <button
-                onClick={() => handleTerminerClient('réussite')}
-                disabled={terminerSaving}
-                className="flex items-center gap-3 p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 transition-all text-left disabled:opacity-50"
-              >
-                <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-                  <Trophy size={15} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-semibold text-emerald-800 text-sm">Réussite</p>
-                  <p className="text-xs text-emerald-600">Formation terminée avec succès → statut "Terminé"</p>
-                </div>
-              </button>
-              <button
-                onClick={() => handleTerminerClient('rattrapage')}
-                disabled={terminerSaving}
-                className="flex items-center gap-3 p-3 rounded-xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-400 transition-all text-left disabled:opacity-50"
-              >
-                <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
-                  <RotateCcw size={15} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-semibold text-orange-800 text-sm">
-                    {terminerTarget?.statut === 'actif' ? 'Rattrapage' : 'Réactiver'}
-                  </p>
-                  <p className="text-xs text-orange-600">
-                    {terminerTarget?.statut === 'actif' ? 'Doit repasser l\'examen → reste "Actif"' : 'Remettre en formation → statut "Actif"'}
-                  </p>
-                </div>
-              </button>
-              <button
-                onClick={() => handleTerminerClient('suspendu')}
-                disabled={terminerSaving}
-                className="flex items-center gap-3 p-3 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 hover:border-red-400 transition-all text-left disabled:opacity-50"
-              >
-                <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
-                  <PauseCircle size={15} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-semibold text-red-800 text-sm">Suspendu</p>
-                  <p className="text-xs text-red-600">Formation interrompue → statut "Suspendu"</p>
-                </div>
-              </button>
+              {/* Réussite — always shown for actif/rattrapage */}
+              {(terminerTarget.statut === 'actif' || terminerTarget.statut === 'rattrapage') && (
+                <button
+                  onClick={() => handleTerminerClient('réussite')}
+                  disabled={terminerSaving}
+                  className="flex items-center gap-3 p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 transition-all text-left disabled:opacity-50"
+                >
+                  <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                    <Trophy size={15} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-emerald-800 text-sm">Réussite</p>
+                    <p className="text-xs text-emerald-600">Formation terminée avec succès → statut "Terminé"</p>
+                  </div>
+                </button>
+              )}
+
+              {/* Rattrapage — only for actif */}
+              {terminerTarget.statut === 'actif' && (
+                <button
+                  onClick={() => handleTerminerClient('rattrapage')}
+                  disabled={terminerSaving}
+                  className="flex items-center gap-3 p-3 rounded-xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-400 transition-all text-left disabled:opacity-50"
+                >
+                  <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+                    <RotateCcw size={15} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-orange-800 text-sm">Rattrapage</p>
+                    <p className="text-xs text-orange-600">Doit repasser l'examen → reste actif</p>
+                  </div>
+                </button>
+              )}
+
+              {/* Échec — only for rattrapage */}
+              {terminerTarget.statut === 'rattrapage' && (
+                <button
+                  onClick={() => handleTerminerClient('echec')}
+                  disabled={terminerSaving}
+                  className="flex items-center gap-3 p-3 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 hover:border-red-400 transition-all text-left disabled:opacity-50"
+                >
+                  <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                    <XCircle size={15} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-red-800 text-sm">Échec</p>
+                    <p className="text-xs text-red-600">Formation échouée → statut "Suspendu"</p>
+                  </div>
+                </button>
+              )}
+
+              {/* Réactiver — for terminé or suspendu */}
+              {(terminerTarget.statut === 'terminé' || terminerTarget.statut === 'suspendu') && (
+                <button
+                  onClick={() => handleTerminerClient('reactiver')}
+                  disabled={terminerSaving}
+                  className="flex items-center gap-3 p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-all text-left disabled:opacity-50"
+                >
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                    <RotateCcw size={15} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-800 text-sm">Réactiver</p>
+                    <p className="text-xs text-blue-600">Remettre en formation → statut "Actif"</p>
+                  </div>
+                </button>
+              )}
             </div>
             {terminerSaving && (
               <div className="flex items-center justify-center mt-3 gap-2 text-slate-500 text-xs">
