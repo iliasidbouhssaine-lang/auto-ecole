@@ -190,7 +190,7 @@ export default function Clients() {
         <StatsCard title="Total" value={stats.total} icon={Users} color="amber" />
         <StatsCard title="Actifs" value={stats.actif} icon={UserCheck} color="green" />
         <StatsCard title="Terminés" value={stats.termine} icon={UserCheck} color="purple" />
-        <StatsCard title="Suspendus" value={stats.suspendu} icon={UserX} color="red" />
+        <StatsCard title="Échecs" value={stats.suspendu} icon={UserX} color="red" />
       </div>
 
       <SectionCard
