@@ -15,6 +15,7 @@ app.use(cors())
 app.use(express.json())
 
 pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS date_contrat DATE DEFAULT NULL").catch(() => {})
+pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL").catch(() => {})
 pool.query("ALTER TABLE reservations ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'réservation'").catch(() => {})
 pool.query("ALTER TABLE reservations ADD COLUMN IF NOT EXISTS clients_data TEXT").catch(() => {})
 
@@ -131,7 +132,12 @@ function toAttendance(r) {
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
 app.get('/api/clients', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM clients ORDER BY id DESC')
+  const { rows } = await pool.query('SELECT * FROM clients WHERE deleted_at IS NULL ORDER BY id DESC')
+  res.json(rows.map(toClient))
+})
+
+app.get('/api/clients/deleted', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM clients WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC')
   res.json(rows.map(toClient))
 })
 
@@ -200,9 +206,21 @@ app.put('/api/clients/:id', async (req, res) => {
 })
 
 app.delete('/api/clients/:id', async (req, res) => {
-  const { rowCount } = await pool.query('DELETE FROM clients WHERE id = $1', [req.params.id])
+  const { rowCount } = await pool.query(
+    'UPDATE clients SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL',
+    [req.params.id]
+  )
   if (!rowCount) return res.status(404).json({ error: 'Client introuvable' })
   res.json({ success: true })
+})
+
+app.post('/api/clients/:id/restore', async (req, res) => {
+  const { rows } = await pool.query(
+    'UPDATE clients SET deleted_at = NULL WHERE id = $1 RETURNING *',
+    [req.params.id]
+  )
+  if (!rows.length) return res.status(404).json({ error: 'Client introuvable' })
+  res.json(toClient(rows[0]))
 })
 
 app.patch('/api/clients/:id/contrat-date', async (req, res) => {

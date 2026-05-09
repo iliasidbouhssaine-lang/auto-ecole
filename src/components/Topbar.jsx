@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, ChevronDown, LogOut, KeyRound, Loader2, Menu } from 'lucide-react'
+import { Search, ChevronDown, LogOut, KeyRound, Loader2, Menu, History, RotateCcw } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useClients } from '../context/ClientsContext'
@@ -38,11 +38,27 @@ export default function Topbar({ onMenuClick }) {
 
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [deletedClients, setDeletedClients] = useState([])
   const [form, setForm] = useState({ current: '', next: '', confirm: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const dropdownRef = useRef(null)
+
+  async function openHistory() {
+    setDropdownOpen(false)
+    const res = await fetch('/api/clients/deleted')
+    const data = await res.json()
+    setDeletedClients(data)
+    setShowHistoryModal(true)
+  }
+
+  async function handleRestore(id) {
+    await fetch(`/api/clients/${id}/restore`, { method: 'POST' })
+    const res = await fetch('/api/clients/deleted')
+    setDeletedClients(await res.json())
+  }
 
   useEffect(() => {
     function handleClick(e) {
@@ -168,6 +184,13 @@ export default function Topbar({ onMenuClick }) {
             {dropdownOpen && (
               <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
                 <button
+                  onClick={openHistory}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <History size={15} className="text-slate-400" />
+                  Historique des clients
+                </button>
+                <button
                   onClick={openPasswordModal}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
                 >
@@ -195,6 +218,29 @@ export default function Topbar({ onMenuClick }) {
           </button>
         </div>
       </div>
+
+      <Modal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} title="Historique des clients supprimés" size="md">
+        {deletedClients.length === 0 ? (
+          <p className="text-center text-slate-400 text-sm py-8">Aucun client supprimé</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {deletedClients.map(c => (
+              <div key={c.id} className="flex items-center justify-between py-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700 truncate">{c.nomComplet}</p>
+                  <p className="text-xs text-slate-400">{c.telephone} · {c.categorie}</p>
+                </div>
+                <button
+                  onClick={() => handleRestore(c.id)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                >
+                  <RotateCcw size={12} /> Restaurer
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       <Modal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} title="Changer le mot de passe" size="sm">
         {success ? (

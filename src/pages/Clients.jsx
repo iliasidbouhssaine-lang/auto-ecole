@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, PauseCircle, Flag, Pencil } from 'lucide-react'
+import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, PauseCircle, Flag, Pencil, Trash2 } from 'lucide-react'
 import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
 import SearchBar from '../components/SearchBar'
@@ -134,6 +134,12 @@ export default function Clients() {
     actif: clients.filter(c => c.statut === 'actif').length,
     termine: clients.filter(c => c.statut === 'terminé').length,
     suspendu: clients.filter(c => c.statut === 'suspendu').length,
+  }
+
+  async function handleDelete(client) {
+    if (!confirm(`Supprimer ${client.nomComplet} ? Il sera déplacé dans l'historique.`)) return
+    await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
+    await refresh()
   }
 
   async function handleAdd() {
@@ -306,12 +312,21 @@ export default function Clients() {
                         </div>
                       </td>
                       <td className="py-3 pl-3 pr-0">
-                        <Link
-                          to={`/clients/${c.id}`}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg"
-                        >
-                          <Eye size={12} /> Voir
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          <Link
+                            to={`/clients/${c.id}`}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg"
+                          >
+                            <Eye size={12} /> Voir
+                          </Link>
+                          <button
+                            onClick={() => handleDelete(c)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50"
+                            title="Supprimer"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
