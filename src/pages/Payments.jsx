@@ -5,7 +5,6 @@ import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
 import SectionCard from '../components/SectionCard'
 import StatsCard from '../components/StatsCard'
-import StatusBadge from '../components/StatusBadge'
 import SearchBar from '../components/SearchBar'
 import FilterSelect from '../components/FilterSelect'
 import Modal from '../components/Modal'
@@ -76,7 +75,6 @@ export default function Payments() {
   const { payments, loading, refresh } = usePayments()
   const { clients, refresh: refreshClients } = useClients()
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
   const [modeFilter, setModeFilter] = useState('')
 
   const [showModal, setShowModal] = useState(false)
@@ -92,13 +90,12 @@ export default function Payments() {
 
   const filtered = payments.filter(p => {
     const matchSearch = p.clientNom.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = !statusFilter || p.statut === statusFilter
     const matchMode = !modeFilter || p.mode === modeFilter
-    return matchSearch && matchStatus && matchMode
+    return matchSearch && matchMode
   })
 
-  const totalPaye    = payments.filter(p => p.statut === 'payé').reduce((s, p) => s + p.montant, 0)
-  const totalAttente = payments.filter(p => p.statut === 'en_attente').reduce((s, p) => s + p.montant, 0)
+  const totalPaye    = payments.reduce((s, p) => s + p.montant, 0)
+  const totalRestant = clients.reduce((s, c) => s + Math.max(0, c.montantTotal - c.montantPaye), 0)
   const currentMonth = new Date().toLocaleDateString('fr-CA', { timeZone: 'Africa/Casablanca' }).slice(0, 7)
   const thisMonth    = payments.filter(p => p.date.startsWith(currentMonth) && p.statut === 'payé').reduce((s, p) => s + p.montant, 0)
 
@@ -188,7 +185,7 @@ export default function Payments() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatsCard title="Total encaissé"   value={formatCurrency(totalPaye)}    icon={CheckCircle2} color="green" />
-        <StatsCard title="En attente"       value={formatCurrency(totalAttente)} icon={Clock}        color="orange" />
+        <StatsCard title="Reste à payer"     value={formatCurrency(totalRestant)} icon={Clock}        color="orange" />
         <StatsCard title="Ce mois"          value={formatCurrency(thisMonth)}    icon={TrendingUp}   color="blue" />
         <StatsCard title="Transactions"     value={payments.length}              icon={CreditCard}   color="purple" />
       </div>
@@ -198,13 +195,6 @@ export default function Payments() {
         actions={
           <div className="flex items-center gap-2">
             <SearchBar value={search} onChange={setSearch} placeholder="Client..." className="w-52" />
-            <FilterSelect
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[{ value: 'payé', label: 'Payé' }, { value: 'en_attente', label: 'En attente' }]}
-              placeholder="Tous les statuts"
-              className="w-40"
-            />
             <FilterSelect
               value={modeFilter}
               onChange={setModeFilter}
@@ -225,7 +215,7 @@ export default function Payments() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
-                  {['Client', 'Mode', 'Montant', 'Date', 'Note', 'Statut', ''].map((h, i) => (
+                  {['Client', 'Mode', 'Montant', 'Date', 'Note', ''].map((h, i) => (
                     <th key={i} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider py-3 px-3 first:pl-0">
                       {h}
                     </th>
@@ -257,7 +247,6 @@ export default function Payments() {
                     </td>
                     <td className="py-3 px-3 text-slate-500 text-xs">{formatDate(p.date)}</td>
                     <td className="py-3 px-3 text-slate-400 text-xs max-w-[200px] truncate">{p.note || '—'}</td>
-                    <td className="py-3 px-3"><StatusBadge status={p.statut} /></td>
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-1">
                         <button
