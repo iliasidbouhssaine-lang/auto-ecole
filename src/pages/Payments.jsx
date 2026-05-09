@@ -1,8 +1,7 @@
-import { useState } from 'react'
-import { Plus, TrendingUp, Clock, CheckCircle2, CreditCard, Loader2, Pencil, Trash2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Plus, TrendingUp, Clock, CheckCircle2, CreditCard, Loader2, Pencil, Trash2, Search } from 'lucide-react'
 import { usePayments } from '../context/PaymentsContext'
 import { useClients } from '../context/ClientsContext'
-import ClientSearchSelect from '../components/ClientSearchSelect'
 import PageHeader from '../components/PageHeader'
 import SectionCard from '../components/SectionCard'
 import StatsCard from '../components/StatsCard'
@@ -18,7 +17,60 @@ const modeOptions = [
   { value: 'Virement', label: 'Virement' },
 ]
 
-const emptyForm = { clientId: '', montant: '', mode: 'Espèces', note: '' }
+const emptyForm = { clientId: null, clientNom: '', montant: '', mode: 'Espèces', note: '' }
+
+function FreeClientSearch({ clients, clientNom, onSelect }) {
+  const [search, setSearch] = useState(clientNom || '')
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => { setSearch(clientNom || '') }, [clientNom])
+
+  useEffect(() => {
+    function onClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [])
+
+  const results = search.trim().length >= 1
+    ? clients.filter(c => c.nomComplet.toLowerCase().includes(search.toLowerCase())).slice(0, 6)
+    : []
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          value={search}
+          onChange={e => { setSearch(e.target.value); onSelect(null, e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          placeholder="Nom du client ou nom libre..."
+          className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+          {results.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              onMouseDown={() => { setSearch(c.nomComplet); onSelect(c.id, c.nomComplet); setOpen(false) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-amber-50 transition-colors"
+            >
+              <div className="w-7 h-7 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {getInitials(c.nomComplet)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-700 truncate">{c.nomComplet}</p>
+                <p className="text-xs text-slate-400">{c.telephone}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Payments() {
   const { payments, loading, refresh } = usePayments()
@@ -51,17 +103,15 @@ export default function Payments() {
   const thisMonth    = payments.filter(p => p.date.startsWith(currentMonth) && p.statut === 'payé').reduce((s, p) => s + p.montant, 0)
 
   async function handleAdd() {
-    if (!form.clientId || !form.montant) return
-    const client = clients.find(c => c.id === parseInt(form.clientId))
-    if (!client) return
+    if (!form.clientNom.trim() || !form.montant) return
     setSaving(true)
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: parseInt(form.clientId),
-          clientNom: client.nomComplet,
+          clientId: form.clientId || null,
+          clientNom: form.clientNom.trim(),
           montant: parseFloat(form.montant),
           mode: form.mode,
           note: form.note,
@@ -243,11 +293,10 @@ export default function Payments() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Client *</label>
-            <ClientSearchSelect
+            <FreeClientSearch
               clients={clients}
-              value={form.clientId}
-              onChange={c => setForm(p => ({ ...p, clientId: c ? c.id : '' }))}
-              placeholder="Rechercher un client..."
+              clientNom={form.clientNom}
+              onSelect={(id, nom) => setForm(p => ({ ...p, clientId: id, clientNom: nom }))}
             />
           </div>
           <div>
@@ -295,7 +344,7 @@ export default function Payments() {
           </button>
           <button
             onClick={handleAdd}
-            disabled={!form.clientId || !form.montant || saving}
+            disabled={!form.clientNom.trim() || !form.montant || saving}
             className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
           >
             {saving && <Loader2 size={13} className="animate-spin" />}

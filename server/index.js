@@ -315,9 +315,9 @@ app.post('/api/payments', async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO payments (client_id, client_nom, montant, mode, note, date, statut)
      VALUES ($1,$2,$3,$4,$5,$6,'payé') RETURNING *`,
-    [parseInt(d.clientId), d.clientNom || '', parseFloat(d.montant) || 0, d.mode || 'Espèces', d.note || '', today]
+    [d.clientId ? parseInt(d.clientId) : null, d.clientNom || '', parseFloat(d.montant) || 0, d.mode || 'Espèces', d.note || '', today]
   )
-  await pool.query(
+  if (d.clientId) await pool.query(
     'UPDATE clients SET montant_paye = montant_paye + $1 WHERE id = $2',
     [parseFloat(d.montant) || 0, parseInt(d.clientId)]
   )

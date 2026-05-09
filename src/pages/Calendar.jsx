@@ -85,7 +85,7 @@ function ClientSearchBox({ clients, selected, multi, onSelect, onRemove }) {
         />
       </div>
 
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || search.trim().length >= 1) && (
         <div className="absolute z-50 top-full mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
           {filtered.map(c => {
             const isSelected = selectedIds.includes(c.id)
@@ -108,6 +108,18 @@ function ClientSearchBox({ clients, selected, multi, onSelect, onRemove }) {
               </button>
             )
           })}
+          {filtered.length === 0 && search.trim().length >= 1 && (
+            <button
+              type="button"
+              onClick={() => { onSelect({ id: null, nomComplet: search.trim(), nom: search.trim() }); if (!multi) { setSearch(search.trim()); setOpen(false) } else { setSearch('') } }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-amber-50 transition-colors"
+            >
+              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                <Plus size={12} className="text-slate-500" />
+              </div>
+              <span className="text-sm text-slate-600">Utiliser <span className="font-semibold text-slate-800">"{search.trim()}"</span></span>
+            </button>
+          )}
         </div>
       )}
 
@@ -163,11 +175,19 @@ export default function Calendar() {
 
   function handleSelectClient(client) {
     if (isMulti) {
-      const exists = form.clients.some(c => c.id === client.id)
-      setForm(p => ({
-        ...p,
-        clients: exists ? p.clients.filter(c => c.id !== client.id) : [...p.clients, { id: client.id, nom: client.nomComplet }],
-      }))
+      if (client.id === null) {
+        const exists = form.clients.some(c => c.nom === client.nom)
+        setForm(p => ({
+          ...p,
+          clients: exists ? p.clients : [...p.clients, { id: null, nom: client.nom }],
+        }))
+      } else {
+        const exists = form.clients.some(c => c.id === client.id)
+        setForm(p => ({
+          ...p,
+          clients: exists ? p.clients.filter(c => c.id !== client.id) : [...p.clients, { id: client.id, nom: client.nomComplet }],
+        }))
+      }
     } else {
       setForm(p => ({ ...p, clientId: client.id, clientNom: client.nomComplet }))
     }
@@ -183,7 +203,7 @@ export default function Calendar() {
 
   function resetModal() { setShowModal(false); setForm(emptyForm) }
 
-  const isFormValid = form.type && (isMulti ? form.clients.length > 0 : !!form.clientId)
+  const isFormValid = form.type && (isMulti ? form.clients.length > 0 : !!form.clientNom)
 
   async function handleAdd() {
     if (!isFormValid) return
@@ -197,7 +217,7 @@ export default function Calendar() {
           date: form.date,
           heure: form.heure,
           statut: form.statut,
-          clientId: isMulti ? null : parseInt(form.clientId),
+          clientId: isMulti ? null : (form.clientId ? parseInt(form.clientId) : null),
           clientNom: isMulti ? form.clients.map(c => c.nom).join(', ') : form.clientNom,
           clientsData: isMulti ? form.clients : [],
         }),
