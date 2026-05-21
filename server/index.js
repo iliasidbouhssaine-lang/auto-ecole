@@ -6,8 +6,10 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { readFileSync } from 'fs'
 import { pool } from './db.js'
-import { createWorker } from 'tesseract.js'
 import sharp from 'sharp'
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3001
@@ -436,196 +438,62 @@ app.post('/api/auth/change-password', async (req, res) => {
 
 // ─── Scan CIN ─────────────────────────────────────────────────────────────────
 
-let ocrWorkerFr = null
-let ocrWorkerAr = null
-
-async function getWorkerFr() {
-  if (!ocrWorkerFr) {
-    ocrWorkerFr = await createWorker('fra', 1, { logger: () => {} })
-    await ocrWorkerFr.setParameters({ tessedit_pageseg_mode: '11' })
-  }
-  return ocrWorkerFr
-}
-async function getWorkerAr() {
-  if (!ocrWorkerAr) {
-    ocrWorkerAr = await createWorker('ara', 1, { logger: () => {} })
-    await ocrWorkerAr.setParameters({ tessedit_pageseg_mode: '11' })
-  }
-  return ocrWorkerAr
-}
-
 async function preprocessImage(base64) {
   const buf = Buffer.from(base64, 'base64')
-  // Cap at 1600px wide — Tesseract doesn't benefit from higher resolution
-  return await sharp(buf)
-    .resize({ width: 1600, withoutEnlargement: true })
-    .grayscale()
-    .normalize()
-    .sharpen()
-    .toBuffer()
+  return (await sharp(buf)
+    .resize({ width: 1200, withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer()).toString('base64')
 }
-
-const stripAr = s => s.replace(/[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/g, '').replace(/\s+/g, ' ').trim()
-
-function getField(lines, labelRe) {
-  for (let i = 0; i < lines.length; i++) {
-    const clean = stripAr(lines[i]).toUpperCase()
-    const m = clean.match(labelRe)
-    if (!m) continue
-    const rest = clean.slice(m.index + m[0].length).replace(/^[\s:\/\-]+/, '').trim()
-    if (rest.length > 1) return rest
-    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-      const next = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-      if (next.length > 1) return next.toUpperCase()
-    }
-  }
-  return null
-}
-
-function parseMRZ(text) {
-  const result = {}
-  const lines = text.split('\n')
-    .map(l => l.replace(/[^A-Z0-9<]/g, '').trim())
-    .filter(l => l.length >= 20)
-
-  const l1 = lines.find(l => /IDMAR/i.test(l))
-  if (l1) {
-    const m = l1.match(/IDMAR([A-Z]{1,2}\d{5,6})/)
-    if (m) result.numeroIdentite = m[1]
-  }
-
-  const l2 = lines.find(l => /\d{6}[0-9<][MF]/.test(l))
-  if (l2) {
-    const m = l2.match(/(\d{2})(\d{2})(\d{2})[0-9<]([MF])/)
-    if (m) {
-      const yy = parseInt(m[1])
-      const yyyy = yy > 25 ? 1900 + yy : 2000 + yy
-      result.dateNaissance = `${yyyy}-${m[2]}-${m[3]}`
-      result.sexe = m[4]
-    }
-  }
-
-  const l3 = lines.find(l => l.includes('<<') && !/IDMAR/.test(l) && !/\d{6}/.test(l))
-  if (l3) {
-    const parts = l3.split('<<')
-    if (parts[0]) result.nom = parts[0].replace(/</g, ' ').trim()
-    if (parts[1]) result.prenom = parts[1].replace(/[<\s]+$/, '').replace(/</g, ' ').trim()
-  }
-
-  return result
-}
-
-const VILLES_LIST = ['AGADIR','BENI MELLAL','CASABLANCA','DAKHLA','EL JADIDA','ERRACHIDIA','FES','GUELMIM','KENITRA','KHOURIBGA','LAAYOUNE','LARACHE','MARRAKECH','MEKNES','MOHAMMEDIA','NADOR','OUARZAZATE','OUJDA','RABAT','SAFI','SALE','SETTAT','TANGER','TETOUAN','TIZNIT']
 
 app.post('/api/scan-cin', async (req, res) => {
   try {
     const { front, back } = req.body
-    const updates = {}
+    const content = []
 
     if (front) {
-      const processed = await preprocessImage(front)
-      const wFr = await getWorkerFr()
-      const { data: { text } } = await wFr.recognize(processed)
-      updates._debug = text
-
-      Object.assign(updates, parseMRZ(text))
-
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-      const fullUpper = stripAr(text).toUpperCase()
-
-      // CIN: 1-2 letters immediately followed by 4-6 digits (no space allowed — avoids "à MEKNES" etc.)
-      if (!updates.numeroIdentite) {
-        const m = fullUpper.match(/\b([A-Z]{1,2})(\d{4,6})\b/)
-        if (m) updates.numeroIdentite = m[1] + m[2]
-      }
-
-      // Date: collect ALL dates, pick the OLDEST (birth) not the expiry
-      // Second separator optional to handle "27.122005" (OCR drops separator between MM and YYYY)
-      if (!updates.dateNaissance) {
-        const allDates = []
-        const dp = /\b(\d{2})[\/\-\.](\d{2})[\s\/\-\.]?(\d{4})\b/g
-        let dm
-        while ((dm = dp.exec(text)) !== null) {
-          const year = parseInt(dm[3])
-          if (year >= 1950 && year <= 2100) allDates.push({ year, str: `${dm[3]}-${dm[2]}-${dm[1]}` })
-        }
-        if (allDates.length) {
-          allDates.sort((a, b) => a.year - b.year)
-          updates.dateNaissance = allDates[0].str
-        }
-      }
-
-      // Sex
-      if (!updates.sexe) {
-        const m = fullUpper.match(/SEXE\s*[:\s]+([MF])\b/)
-        if (m) updates.sexe = m[1]
-        else if (/\bMASCULIN\b/.test(fullUpper)) updates.sexe = 'M'
-        else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
-      }
-
-      // Nom/Prénom: positional — scan backwards from "Né le" line
-      // Real name lines are uppercase-dominant (>60% of letters are uppercase)
-      const isUpperDominant = s => {
-        const letters = s.replace(/[^a-zA-ZÀ-ÿ]/g, '')
-        if (letters.length < 2) return false
-        const upper = s.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ]/g, '').length
-        return upper / letters.length > 0.6
-      }
-      if (!updates.nom || !updates.prenom) {
-        const neleIdx = lines.findIndex(l => /N[EÉ]\s*[Ll][Ee]\b/i.test(stripAr(l)))
-        if (neleIdx > 0) {
-          const nameCandidates = []
-          for (let j = neleIdx - 1; j >= Math.max(0, neleIdx - 6); j--) {
-            const clean = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\-]/gi, '').replace(/^[\-\s]+|[\-\s]+$/g, '').trim()
-            if (clean.length >= 3 && isUpperDominant(lines[j])) {
-              nameCandidates.unshift(clean.toUpperCase())
-            }
-          }
-          if (nameCandidates.length >= 1 && !updates.nom) updates.nom = nameCandidates[nameCandidates.length - 1]
-          if (nameCandidates.length >= 2 && !updates.prenom) updates.prenom = nameCandidates[0]
-        }
-      }
-      // Label-based fallback
-      if (!updates.nom) {
-        const v = getField(lines, /\bNOM\b/)
-        if (v) updates.nom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-      }
-      if (!updates.prenom) {
-        const v = getField(lines, /\bPR[EÉ]NOM\b/)
-        if (v) updates.prenom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-      }
-
-      // Lieu de naissance: regex match first, then VILLES list fallback
-      const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ]{3}[A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]*)/)
-      if (lieuM) updates.lieuNaissance = lieuM[1].trim()
-      if (!updates.lieuNaissance) {
-        const found = VILLES_LIST.find(v => fullUpper.includes(v))
-        if (found) updates.lieuNaissance = found
-      }
+      content.push({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: await preprocessImage(front) }
+      })
     }
-
     if (back) {
-      const processed = await preprocessImage(back)
-      const wFr = await getWorkerFr()
-      const { data: { text } } = await wFr.recognize(processed)
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-      const adresse = getField(lines, /\bADRESSE\b/)
-      if (adresse) updates.adresse = adresse.toUpperCase()
-      const found = VILLES_LIST.find(v => stripAr(text).toUpperCase().includes(v))
-      if (found) updates.ville = found
+      content.push({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: await preprocessImage(back) }
+      })
     }
 
-    if (front) {
-      const processed = await preprocessImage(front)
-      const wAr = await getWorkerAr()
-      const { data: { text: textAr } } = await wAr.recognize(processed)
-      // Keep only short Arabic lines without digits or Latin — likely actual name lines
-      const arLines = textAr.split('\n')
-        .map(l => l.trim())
-        .filter(l => /[؀-ۿ]{2,}/.test(l) && !/[A-Za-z0-9]{3,}/.test(l) && l.length < 35)
-      if (arLines[0]) updates.prenomAr = arLines[0]
-      if (arLines[1]) updates.nomAr = arLines[1]
-    }
+    content.push({
+      type: 'text',
+      text: `Ceci est une carte nationale d'identité marocaine (CIN).
+Extrais les champs suivants et retourne UNIQUEMENT un objet JSON valide, sans markdown, sans commentaires.
+Si un champ est illisible ou absent, mets null.
+
+{
+  "numeroIdentite": "lettres+chiffres du numéro CIN (ex: DM1560)",
+  "nom": "NOM DE FAMILLE en majuscules (latin)",
+  "prenom": "PRÉNOM en majuscules (latin)",
+  "nomAr": "الاسم العائلي بالعربية",
+  "prenomAr": "الاسم الشخصي بالعربية",
+  "dateNaissance": "YYYY-MM-DD",
+  "lieuNaissance": "ville de naissance",
+  "sexe": "M ou F",
+  "adresse": "adresse complète si visible (verso)"
+}`
+    })
+
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{ role: 'user', content }]
+    })
+
+    const raw = message.content[0].text.trim()
+    const updates = JSON.parse(raw.replace(/^```json?\n?/, '').replace(/\n?```$/, ''))
+    Object.keys(updates).forEach(k => {
+      if (updates[k] === null || updates[k] === undefined || updates[k] === '') delete updates[k]
+    })
 
     res.json(updates)
   } catch (err) {
