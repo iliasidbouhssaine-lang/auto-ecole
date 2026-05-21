@@ -533,17 +533,17 @@ app.post('/api/scan-cin', async (req, res) => {
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
       const fullUpper = stripAr(text).toUpperCase()
 
-      // CIN: 1-2 letters + optional space + 5-6 digits
+      // CIN: 1-2 letters immediately followed by 4-6 digits (no space allowed — avoids "à MEKNES" etc.)
       if (!updates.numeroIdentite) {
-        const m = fullUpper.match(/\b([A-Z]{1,2})\s*(\d{5,6})\b/)
+        const m = fullUpper.match(/\b([A-Z]{1,2})(\d{4,6})\b/)
         if (m) updates.numeroIdentite = m[1] + m[2]
       }
 
       // Date: collect ALL dates, pick the OLDEST (birth) not the expiry
-      // Supports DD.MM.YYYY and DD.MM YYYY (space before year)
+      // Second separator optional to handle "27.122005" (OCR drops separator between MM and YYYY)
       if (!updates.dateNaissance) {
         const allDates = []
-        const dp = /\b(\d{2})[\/\-\.](\d{2})[\s\/\-\.](\d{4})\b/g
+        const dp = /\b(\d{2})[\/\-\.](\d{2})[\s\/\-\.]?(\d{4})\b/g
         let dm
         while ((dm = dp.exec(text)) !== null) {
           const year = parseInt(dm[3])
@@ -563,19 +563,33 @@ app.post('/api/scan-cin', async (req, res) => {
         else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
       }
 
-      // Nom: label-based first, then fallback: longest all-caps word not a card keyword
+      // Nom/Prénom: positional — scan backwards from "Né le" line
+      // Real name lines are uppercase-dominant (>60% of letters are uppercase)
+      const isUpperDominant = s => {
+        const letters = s.replace(/[^a-zA-ZÀ-ÿ]/g, '')
+        if (letters.length < 2) return false
+        const upper = s.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ]/g, '').length
+        return upper / letters.length > 0.6
+      }
+      if (!updates.nom || !updates.prenom) {
+        const neleIdx = lines.findIndex(l => /N[EÉ]\s*[Ll][Ee]\b/i.test(stripAr(l)))
+        if (neleIdx > 0) {
+          const nameCandidates = []
+          for (let j = neleIdx - 1; j >= Math.max(0, neleIdx - 6); j--) {
+            const clean = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\-]/gi, '').replace(/^[\-\s]+|[\-\s]+$/g, '').trim()
+            if (clean.length >= 3 && isUpperDominant(lines[j])) {
+              nameCandidates.unshift(clean.toUpperCase())
+            }
+          }
+          if (nameCandidates.length >= 1 && !updates.nom) updates.nom = nameCandidates[nameCandidates.length - 1]
+          if (nameCandidates.length >= 2 && !updates.prenom) updates.prenom = nameCandidates[0]
+        }
+      }
+      // Label-based fallback
       if (!updates.nom) {
         const v = getField(lines, /\bNOM\b/)
         if (v) updates.nom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
       }
-      if (!updates.nom) {
-        const CARD_KW = new Set(['CARTE','NATIONALE','IDENTITE','ELECTRONIQUE','ROYAUME','MAROC','VALABLE','MAROCAINE','JUSQU','IDENTIF','DAMAROC','ROVANE','DISISEU','LECTRONIQUE'])
-        const candidates = (fullUpper.match(/\b[A-Z]{6,}\b/g) || []).filter(w => !CARD_KW.has(w))
-        // Pick longest (names are longer than typical OCR noise words)
-        if (candidates.length) updates.nom = candidates.sort((a, b) => b.length - a.length)[0]
-      }
-
-      // Prénom
       if (!updates.prenom) {
         const v = getField(lines, /\bPR[EÉ]NOM\b/)
         if (v) updates.prenom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
