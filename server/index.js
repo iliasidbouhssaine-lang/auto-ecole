@@ -523,28 +523,54 @@ app.post('/api/scan-cin', async (req, res) => {
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
       const fullUpper = stripAr(text).toUpperCase()
 
+      // CIN: 1-2 letters + optional space + 5-6 digits
       if (!updates.numeroIdentite) {
         const m = fullUpper.match(/\b([A-Z]{1,2})\s*(\d{5,6})\b/)
         if (m) updates.numeroIdentite = m[1] + m[2]
       }
+
+      // Date: collect ALL dates, pick the OLDEST (birth) not the expiry
+      // Supports DD.MM.YYYY and DD.MM YYYY (space before year)
       if (!updates.dateNaissance) {
-        const m = text.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/)
-        if (m) updates.dateNaissance = `${m[3]}-${m[2]}-${m[1]}`
+        const allDates = []
+        const dp = /\b(\d{2})[\/\-\.](\d{2})[\s\/\-\.](\d{4})\b/g
+        let dm
+        while ((dm = dp.exec(text)) !== null) {
+          const year = parseInt(dm[3])
+          if (year >= 1950 && year <= 2100) allDates.push({ year, str: `${dm[3]}-${dm[2]}-${dm[1]}` })
+        }
+        if (allDates.length) {
+          allDates.sort((a, b) => a.year - b.year)
+          updates.dateNaissance = allDates[0].str
+        }
       }
+
+      // Sex
       if (!updates.sexe) {
         const m = fullUpper.match(/SEXE\s*[:\s]+([MF])\b/)
         if (m) updates.sexe = m[1]
         else if (/\bMASCULIN\b/.test(fullUpper)) updates.sexe = 'M'
         else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
       }
+
+      // Nom: label-based first, then fallback: longest all-caps word not a card keyword
       if (!updates.nom) {
         const v = getField(lines, /\bNOM\b/)
         if (v) updates.nom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
       }
+      if (!updates.nom) {
+        const CARD_KW = new Set(['CARTE','NATIONALE','IDENTITE','ELECTRONIQUE','ROYAUME','MAROC','VALABLE','MAROCAINE','JUSQU','IDENTIF'])
+        const candidates = (fullUpper.match(/\b[A-Z]{6,}\b/g) || []).filter(w => !CARD_KW.has(w))
+        if (candidates.length) updates.nom = candidates[0]
+      }
+
+      // Prénom
       if (!updates.prenom) {
         const v = getField(lines, /\bPR[EÉ]NOM\b/)
         if (v) updates.prenom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
       }
+
+      // Lieu de naissance
       const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ]{3}[A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]*)/)
       if (lieuM) updates.lieuNaissance = lieuM[1].trim()
     }
