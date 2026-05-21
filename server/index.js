@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3001
 
 const app = express()
 app.use(cors())
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({ limit: '25mb' }))
 
 pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS date_contrat DATE DEFAULT NULL").catch(() => {})
 pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL").catch(() => {})
@@ -440,17 +440,29 @@ let ocrWorkerFr = null
 let ocrWorkerAr = null
 
 async function getWorkerFr() {
-  if (!ocrWorkerFr) ocrWorkerFr = await createWorker('fra', 1, { logger: () => {} })
+  if (!ocrWorkerFr) {
+    ocrWorkerFr = await createWorker('fra', 1, { logger: () => {} })
+    await ocrWorkerFr.setParameters({ tessedit_pageseg_mode: '11' })
+  }
   return ocrWorkerFr
 }
 async function getWorkerAr() {
-  if (!ocrWorkerAr) ocrWorkerAr = await createWorker('ara', 1, { logger: () => {} })
+  if (!ocrWorkerAr) {
+    ocrWorkerAr = await createWorker('ara', 1, { logger: () => {} })
+    await ocrWorkerAr.setParameters({ tessedit_pageseg_mode: '11' })
+  }
   return ocrWorkerAr
 }
 
 async function preprocessImage(base64) {
   const buf = Buffer.from(base64, 'base64')
-  return await sharp(buf).grayscale().normalize().sharpen().toBuffer()
+  // Cap at 1600px wide — Tesseract doesn't benefit from higher resolution
+  return await sharp(buf)
+    .resize({ width: 1600, withoutEnlargement: true })
+    .grayscale()
+    .normalize()
+    .sharpen()
+    .toBuffer()
 }
 
 const stripAr = s => s.replace(/[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/g, '').replace(/\s+/g, ' ').trim()
@@ -568,9 +580,13 @@ app.post('/api/scan-cin', async (req, res) => {
         if (v) updates.prenom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
       }
 
-      // Lieu de naissance
+      // Lieu de naissance: regex match first, then VILLES list fallback
       const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ]{3}[A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]*)/)
       if (lieuM) updates.lieuNaissance = lieuM[1].trim()
+      if (!updates.lieuNaissance) {
+        const found = VILLES_LIST.find(v => fullUpper.includes(v))
+        if (found) updates.lieuNaissance = found
+      }
     }
 
     if (back) {
