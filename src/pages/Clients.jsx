@@ -176,52 +176,74 @@ export default function Clients() {
     try {
       const updates = {}
 
+      // Strip Arabic/Hebrew unicode block from a string, keep Latin
+      const stripAr = s => s.replace(/[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/g, '').replace(/\s+/g, ' ').trim()
+
+      // Extract value after a label pattern: checks same line then next 3 lines
+      function getField(lines, labelRe) {
+        for (let i = 0; i < lines.length; i++) {
+          const clean = stripAr(lines[i]).toUpperCase()
+          const m = clean.match(labelRe)
+          if (!m) continue
+          // Value on same line (after the matched label)
+          const rest = clean.slice(m.index + m[0].length).replace(/^[\s:\/\-]+/, '').trim()
+          if (rest.length > 1) return rest
+          // Value on the next non-empty Latin line
+          for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+            const next = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+            if (next.length > 1) return next.toUpperCase()
+          }
+        }
+        return null
+      }
+
       if (scanFront) {
         const { data: { text } } = await Tesseract.recognize(scanFront, 'fra')
-        const upper = text.toUpperCase()
-
-        const cinMatch = upper.match(/\b([A-Z]{1,2}\d{5,6})\b/)
-        if (cinMatch) updates.numeroIdentite = cinMatch[1]
-
-        const dateMatch = text.match(/\b(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{4})\b/)
-        if (dateMatch) updates.dateNaissance = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`
-
-        if (/MASCULIN/i.test(text)) updates.sexe = 'M'
-        else if (/F[ÉE]MININ/i.test(text)) updates.sexe = 'F'
-
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-        for (let i = 0; i < lines.length; i++) {
-          if (/^NOM\b/i.test(lines[i]) && lines[i + 1]) {
-            const v = lines[i + 1].replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-            if (v) updates.nom = v.toUpperCase()
-          }
-          if (/^PR[ÉE]NOM\b/i.test(lines[i]) && lines[i + 1]) {
-            const v = lines[i + 1].replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-            if (v) updates.prenom = v.toUpperCase()
-          }
-          if (/N[EÉ][EÉ]?\s*[ÀA]\b/i.test(lines[i])) {
-            const lieu = lines[i].replace(/N[EÉ][EÉ]?\s*[ÀA]\s*/i, '').trim() || lines[i + 1]
-            if (lieu) updates.lieuNaissance = lieu.toUpperCase()
-          }
+        const fullUpper = stripAr(text).toUpperCase()
+
+        // CIN: 1-2 letters + optional space + 5-6 digits
+        const cinM = fullUpper.match(/\b([A-Z]{1,2})\s*(\d{5,6})\b/)
+        if (cinM) updates.numeroIdentite = cinM[1] + cinM[2]
+
+        // Date of birth: DD/MM/YYYY (Moroccan CIN uses this format)
+        const dateM = text.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/)
+        if (dateM) updates.dateNaissance = `${dateM[3]}-${dateM[2]}-${dateM[1]}`
+
+        // Sex: "SEXE : M/F" or MRZ line gender, or MASCULIN/FEMININ
+        const sexM = fullUpper.match(/SEXE\s*[:\s]+([MF])\b/)
+        if (sexM) updates.sexe = sexM[1]
+        else if (/\bMASCULIN\b/.test(fullUpper)) updates.sexe = 'M'
+        else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
+
+        // \bNOM\b won't match inside "PRENOM" (E before N breaks the word boundary)
+        const nom = getField(lines, /\bNOM\b/)
+        if (nom) updates.nom = nom.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim().toUpperCase()
+
+        const prenom = getField(lines, /\bPR[EÉ]NOM\b/)
+        if (prenom) updates.prenom = prenom.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim().toUpperCase()
+
+        // "NE(E) LE : DD/MM/YYYY  A : VILLE" — extract place after "A :"
+        const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ][A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]{2,})/)
+        if (lieuM) updates.lieuNaissance = lieuM[1].trim()
+        else {
+          const lieu = getField(lines, /\bA\s*:/)
+          if (lieu) updates.lieuNaissance = lieu.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
         }
       }
 
       if (scanBack) {
         const { data: { text: textBack } } = await Tesseract.recognize(scanBack, 'fra')
         const lines = textBack.split('\n').map(l => l.trim()).filter(Boolean)
-        for (let i = 0; i < lines.length; i++) {
-          if (/ADRESSE/i.test(lines[i])) {
-            const adresse = lines[i].replace(/ADRESSE\s*:?\s*/i, '').trim() || lines[i + 1]
-            if (adresse) updates.adresse = adresse.toUpperCase()
-          }
-        }
-        const foundVille = VILLES.find(v => textBack.toUpperCase().includes(v))
+        const adresseVal = getField(lines, /\bADRESSE\b/)
+        if (adresseVal) updates.adresse = adresseVal.toUpperCase()
+        const foundVille = VILLES.find(v => stripAr(textBack).toUpperCase().includes(v))
         if (foundVille) updates.ville = foundVille
       }
 
       if (scanFront) {
         const { data: { text: textAr } } = await Tesseract.recognize(scanFront, 'ara')
-        const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]/.test(l))
+        const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]{2,}/.test(l))
         if (arLines[0]) updates.prenomAr = arLines[0]
         if (arLines[1]) updates.nomAr = arLines[1]
       }
