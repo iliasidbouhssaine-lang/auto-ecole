@@ -509,11 +509,14 @@ app.post('/api/scan-cin', async (req, res) => {
   try {
     const { front, back } = req.body
     const updates = {}
+    let _debugFront = null, _debugBack = null
 
     if (front) {
       const processed = await preprocessImage(front)
       const wFr = await getWorkerFr()
       const { data: { text } } = await wFr.recognize(processed)
+      _debugFront = text
+      console.log('=== OCR FRONT ===\n', text, '\n=================')
 
       Object.assign(updates, parseMRZ(text))
 
@@ -550,6 +553,8 @@ app.post('/api/scan-cin', async (req, res) => {
       const processed = await preprocessImage(back)
       const wFr = await getWorkerFr()
       const { data: { text } } = await wFr.recognize(processed)
+      _debugBack = text
+      console.log('=== OCR BACK ===\n', text, '\n================')
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
       const adresse = getField(lines, /\bADRESSE\b/)
       if (adresse) updates.adresse = adresse.toUpperCase()
@@ -566,7 +571,8 @@ app.post('/api/scan-cin', async (req, res) => {
       if (arLines[1]) updates.nomAr = arLines[1]
     }
 
-    res.json(updates)
+    console.log('=== EXTRACTED ===', updates)
+    res.json({ ...updates, _debugFront, _debugBack })
   } catch (err) {
     console.error('scan-cin error:', err)
     res.status(500).json({ error: 'Extraction échouée' })
