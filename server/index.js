@@ -559,9 +559,10 @@ app.post('/api/scan-cin', async (req, res) => {
         if (v) updates.nom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
       }
       if (!updates.nom) {
-        const CARD_KW = new Set(['CARTE','NATIONALE','IDENTITE','ELECTRONIQUE','ROYAUME','MAROC','VALABLE','MAROCAINE','JUSQU','IDENTIF'])
+        const CARD_KW = new Set(['CARTE','NATIONALE','IDENTITE','ELECTRONIQUE','ROYAUME','MAROC','VALABLE','MAROCAINE','JUSQU','IDENTIF','DAMAROC','ROVANE','DISISEU','LECTRONIQUE'])
         const candidates = (fullUpper.match(/\b[A-Z]{6,}\b/g) || []).filter(w => !CARD_KW.has(w))
-        if (candidates.length) updates.nom = candidates[0]
+        // Pick longest (names are longer than typical OCR noise words)
+        if (candidates.length) updates.nom = candidates.sort((a, b) => b.length - a.length)[0]
       }
 
       // Prénom
@@ -592,7 +593,10 @@ app.post('/api/scan-cin', async (req, res) => {
       const processed = await preprocessImage(front)
       const wAr = await getWorkerAr()
       const { data: { text: textAr } } = await wAr.recognize(processed)
-      const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]{2,}/.test(l))
+      // Keep only short Arabic lines without digits or Latin — likely actual name lines
+      const arLines = textAr.split('\n')
+        .map(l => l.trim())
+        .filter(l => /[؀-ۿ]{2,}/.test(l) && !/[A-Za-z0-9]{3,}/.test(l) && l.length < 35)
       if (arLines[0]) updates.prenomAr = arLines[0]
       if (arLines[1]) updates.nomAr = arLines[1]
     }
