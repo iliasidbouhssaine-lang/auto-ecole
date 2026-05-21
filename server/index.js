@@ -526,6 +526,7 @@ app.post('/api/scan-cin', async (req, res) => {
       const processed = await preprocessImage(front)
       const wFr = await getWorkerFr()
       const { data: { text } } = await wFr.recognize(processed)
+      updates._debug = text
 
       Object.assign(updates, parseMRZ(text))
 
