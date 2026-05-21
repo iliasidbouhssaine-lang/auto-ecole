@@ -6,13 +6,15 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { readFileSync } from 'fs'
 import { pool } from './db.js'
+import { createWorker } from 'tesseract.js'
+import sharp from 'sharp'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3001
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS date_contrat DATE DEFAULT NULL").catch(() => {})
 pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL").catch(() => {})
@@ -430,6 +432,145 @@ app.post('/api/auth/change-password', async (req, res) => {
   const hash = await bcrypt.hash(newPassword, 10)
   await pool.query('UPDATE users SET password_hash = $1 WHERE username = $2', [hash, username])
   res.json({ success: true })
+})
+
+// ─── Scan CIN ─────────────────────────────────────────────────────────────────
+
+let ocrWorkerFr = null
+let ocrWorkerAr = null
+
+async function getWorkerFr() {
+  if (!ocrWorkerFr) ocrWorkerFr = await createWorker('fra', 1, { logger: () => {} })
+  return ocrWorkerFr
+}
+async function getWorkerAr() {
+  if (!ocrWorkerAr) ocrWorkerAr = await createWorker('ara', 1, { logger: () => {} })
+  return ocrWorkerAr
+}
+
+async function preprocessImage(base64) {
+  const buf = Buffer.from(base64, 'base64')
+  return await sharp(buf).grayscale().normalize().sharpen().toBuffer()
+}
+
+const stripAr = s => s.replace(/[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/g, '').replace(/\s+/g, ' ').trim()
+
+function getField(lines, labelRe) {
+  for (let i = 0; i < lines.length; i++) {
+    const clean = stripAr(lines[i]).toUpperCase()
+    const m = clean.match(labelRe)
+    if (!m) continue
+    const rest = clean.slice(m.index + m[0].length).replace(/^[\s:\/\-]+/, '').trim()
+    if (rest.length > 1) return rest
+    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const next = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+      if (next.length > 1) return next.toUpperCase()
+    }
+  }
+  return null
+}
+
+function parseMRZ(text) {
+  const result = {}
+  const lines = text.split('\n')
+    .map(l => l.replace(/[^A-Z0-9<]/g, '').trim())
+    .filter(l => l.length >= 20)
+
+  const l1 = lines.find(l => /IDMAR/i.test(l))
+  if (l1) {
+    const m = l1.match(/IDMAR([A-Z]{1,2}\d{5,6})/)
+    if (m) result.numeroIdentite = m[1]
+  }
+
+  const l2 = lines.find(l => /\d{6}[0-9<][MF]/.test(l))
+  if (l2) {
+    const m = l2.match(/(\d{2})(\d{2})(\d{2})[0-9<]([MF])/)
+    if (m) {
+      const yy = parseInt(m[1])
+      const yyyy = yy > 25 ? 1900 + yy : 2000 + yy
+      result.dateNaissance = `${yyyy}-${m[2]}-${m[3]}`
+      result.sexe = m[4]
+    }
+  }
+
+  const l3 = lines.find(l => l.includes('<<') && !/IDMAR/.test(l) && !/\d{6}/.test(l))
+  if (l3) {
+    const parts = l3.split('<<')
+    if (parts[0]) result.nom = parts[0].replace(/</g, ' ').trim()
+    if (parts[1]) result.prenom = parts[1].replace(/[<\s]+$/, '').replace(/</g, ' ').trim()
+  }
+
+  return result
+}
+
+const VILLES_LIST = ['AGADIR','BENI MELLAL','CASABLANCA','DAKHLA','EL JADIDA','ERRACHIDIA','FES','GUELMIM','KENITRA','KHOURIBGA','LAAYOUNE','LARACHE','MARRAKECH','MEKNES','MOHAMMEDIA','NADOR','OUARZAZATE','OUJDA','RABAT','SAFI','SALE','SETTAT','TANGER','TETOUAN','TIZNIT']
+
+app.post('/api/scan-cin', async (req, res) => {
+  try {
+    const { front, back } = req.body
+    const updates = {}
+
+    if (front) {
+      const processed = await preprocessImage(front)
+      const wFr = await getWorkerFr()
+      const { data: { text } } = await wFr.recognize(processed)
+
+      Object.assign(updates, parseMRZ(text))
+
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      const fullUpper = stripAr(text).toUpperCase()
+
+      if (!updates.numeroIdentite) {
+        const m = fullUpper.match(/\b([A-Z]{1,2})\s*(\d{5,6})\b/)
+        if (m) updates.numeroIdentite = m[1] + m[2]
+      }
+      if (!updates.dateNaissance) {
+        const m = text.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/)
+        if (m) updates.dateNaissance = `${m[3]}-${m[2]}-${m[1]}`
+      }
+      if (!updates.sexe) {
+        const m = fullUpper.match(/SEXE\s*[:\s]+([MF])\b/)
+        if (m) updates.sexe = m[1]
+        else if (/\bMASCULIN\b/.test(fullUpper)) updates.sexe = 'M'
+        else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
+      }
+      if (!updates.nom) {
+        const v = getField(lines, /\bNOM\b/)
+        if (v) updates.nom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+      }
+      if (!updates.prenom) {
+        const v = getField(lines, /\bPR[EÉ]NOM\b/)
+        if (v) updates.prenom = v.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+      }
+      const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ]{3}[A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]*)/)
+      if (lieuM) updates.lieuNaissance = lieuM[1].trim()
+    }
+
+    if (back) {
+      const processed = await preprocessImage(back)
+      const wFr = await getWorkerFr()
+      const { data: { text } } = await wFr.recognize(processed)
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      const adresse = getField(lines, /\bADRESSE\b/)
+      if (adresse) updates.adresse = adresse.toUpperCase()
+      const found = VILLES_LIST.find(v => stripAr(text).toUpperCase().includes(v))
+      if (found) updates.ville = found
+    }
+
+    if (front) {
+      const processed = await preprocessImage(front)
+      const wAr = await getWorkerAr()
+      const { data: { text: textAr } } = await wAr.recognize(processed)
+      const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]{2,}/.test(l))
+      if (arLines[0]) updates.prenomAr = arLines[0]
+      if (arLines[1]) updates.nomAr = arLines[1]
+    }
+
+    res.json(updates)
+  } catch (err) {
+    console.error('scan-cin error:', err)
+    res.status(500).json({ error: 'Extraction échouée' })
+  }
 })
 
 // ─── Frontend (production) ────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import Tesseract from 'tesseract.js'
 import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle, CreditCard, Camera, CheckCircle2, X } from 'lucide-react'
 import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
@@ -174,85 +173,33 @@ export default function Clients() {
     setScanning(true)
     setScanDone(false)
     try {
-      const updates = {}
+      const toBase64 = file => new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
-      // Strip Arabic/Hebrew unicode block from a string, keep Latin
-      const stripAr = s => s.replace(/[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/g, '').replace(/\s+/g, ' ').trim()
+      const body = {}
+      if (scanFront) { body.front = await toBase64(scanFront); body.frontType = scanFront.type }
+      if (scanBack) { body.back = await toBase64(scanBack); body.backType = scanBack.type }
 
-      // Extract value after a label pattern: checks same line then next 3 lines
-      function getField(lines, labelRe) {
-        for (let i = 0; i < lines.length; i++) {
-          const clean = stripAr(lines[i]).toUpperCase()
-          const m = clean.match(labelRe)
-          if (!m) continue
-          // Value on same line (after the matched label)
-          const rest = clean.slice(m.index + m[0].length).replace(/^[\s:\/\-]+/, '').trim()
-          if (rest.length > 1) return rest
-          // Value on the next non-empty Latin line
-          for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-            const next = stripAr(lines[j]).replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-            if (next.length > 1) return next.toUpperCase()
-          }
-        }
-        return null
-      }
+      const res = await fetch('/api/scan-cin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('Extraction échouée')
+      const data = await res.json()
 
-      if (scanFront) {
-        const { data: { text } } = await Tesseract.recognize(scanFront, 'fra')
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-        const fullUpper = stripAr(text).toUpperCase()
-
-        // CIN: 1-2 letters + optional space + 5-6 digits
-        const cinM = fullUpper.match(/\b([A-Z]{1,2})\s*(\d{5,6})\b/)
-        if (cinM) updates.numeroIdentite = cinM[1] + cinM[2]
-
-        // Date of birth: DD/MM/YYYY (Moroccan CIN uses this format)
-        const dateM = text.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/)
-        if (dateM) updates.dateNaissance = `${dateM[3]}-${dateM[2]}-${dateM[1]}`
-
-        // Sex: "SEXE : M/F" or MRZ line gender, or MASCULIN/FEMININ
-        const sexM = fullUpper.match(/SEXE\s*[:\s]+([MF])\b/)
-        if (sexM) updates.sexe = sexM[1]
-        else if (/\bMASCULIN\b/.test(fullUpper)) updates.sexe = 'M'
-        else if (/\bF[EÉ]MININ\b/.test(fullUpper)) updates.sexe = 'F'
-
-        // \bNOM\b won't match inside "PRENOM" (E before N breaks the word boundary)
-        const nom = getField(lines, /\bNOM\b/)
-        if (nom) updates.nom = nom.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim().toUpperCase()
-
-        const prenom = getField(lines, /\bPR[EÉ]NOM\b/)
-        if (prenom) updates.prenom = prenom.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim().toUpperCase()
-
-        // "NE(E) LE : DD/MM/YYYY  A : VILLE" — extract place after "A :"
-        const lieuM = fullUpper.match(/\bA\s*[:\s]+([A-ZÀÂÉÈÊËÎÏÔÙÛÜ][A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]{2,})/)
-        if (lieuM) updates.lieuNaissance = lieuM[1].trim()
-        else {
-          const lieu = getField(lines, /\bA\s*:/)
-          if (lieu) updates.lieuNaissance = lieu.replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
-        }
-      }
-
-      if (scanBack) {
-        const { data: { text: textBack } } = await Tesseract.recognize(scanBack, 'fra')
-        const lines = textBack.split('\n').map(l => l.trim()).filter(Boolean)
-        const adresseVal = getField(lines, /\bADRESSE\b/)
-        if (adresseVal) updates.adresse = adresseVal.toUpperCase()
-        const foundVille = VILLES.find(v => stripAr(textBack).toUpperCase().includes(v))
-        if (foundVille) updates.ville = foundVille
-      }
-
-      if (scanFront) {
-        const { data: { text: textAr } } = await Tesseract.recognize(scanFront, 'ara')
-        const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]{2,}/.test(l))
-        if (arLines[0]) updates.prenomAr = arLines[0]
-        if (arLines[1]) updates.nomAr = arLines[1]
-      }
-
-      setForm(prev => ({ ...prev, ...updates }))
+      setForm(prev => ({
+        ...prev,
+        ...Object.fromEntries(Object.entries(data).filter(([, v]) => v !== null && v !== undefined && v !== ''))
+      }))
       setScanDone(true)
       setScanOpen(false)
     } catch (err) {
-      console.error('OCR error:', err)
+      console.error('Scan CIN error:', err)
     } finally {
       setScanning(false)
     }
