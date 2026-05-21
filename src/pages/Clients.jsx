@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle, CreditCard } from 'lucide-react'
+import Tesseract from 'tesseract.js'
+import { Plus, Eye, UserCheck, UserX, Users, ChevronRight, Loader2, Trophy, RotateCcw, Flag, Pencil, Trash2, XCircle, CreditCard, Camera, CheckCircle2, X } from 'lucide-react'
 import { useClients } from '../context/ClientsContext'
 import PageHeader from '../components/PageHeader'
 import SearchBar from '../components/SearchBar'
@@ -96,6 +97,11 @@ export default function Clients() {
   const [terminerTarget, setTerminerTarget] = useState(null)
   const [terminerSaving, setTerminerSaving] = useState(false)
   const [paymentWarning, setPaymentWarning] = useState(null)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [scanFront, setScanFront] = useState(null)
+  const [scanBack, setScanBack] = useState(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanDone, setScanDone] = useState(false)
 
   const set = (key, val) => setForm(p => ({ ...p, [key]: val }))
 
@@ -163,10 +169,81 @@ export default function Clients() {
     setShowModal(false)
   }
 
+  async function handleScanCIN() {
+    if (!scanFront && !scanBack) return
+    setScanning(true)
+    setScanDone(false)
+    try {
+      const updates = {}
+
+      if (scanFront) {
+        const { data: { text } } = await Tesseract.recognize(scanFront, 'fra')
+        const upper = text.toUpperCase()
+
+        const cinMatch = upper.match(/\b([A-Z]{1,2}\d{5,6})\b/)
+        if (cinMatch) updates.numeroIdentite = cinMatch[1]
+
+        const dateMatch = text.match(/\b(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{4})\b/)
+        if (dateMatch) updates.dateNaissance = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`
+
+        if (/MASCULIN/i.test(text)) updates.sexe = 'M'
+        else if (/F[ÉE]MININ/i.test(text)) updates.sexe = 'F'
+
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+        for (let i = 0; i < lines.length; i++) {
+          if (/^NOM\b/i.test(lines[i]) && lines[i + 1]) {
+            const v = lines[i + 1].replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+            if (v) updates.nom = v.toUpperCase()
+          }
+          if (/^PR[ÉE]NOM\b/i.test(lines[i]) && lines[i + 1]) {
+            const v = lines[i + 1].replace(/[^A-ZÀÂÉÈÊËÎÏÔÙÛÜ\s\-]/gi, '').trim()
+            if (v) updates.prenom = v.toUpperCase()
+          }
+          if (/N[EÉ][EÉ]?\s*[ÀA]\b/i.test(lines[i])) {
+            const lieu = lines[i].replace(/N[EÉ][EÉ]?\s*[ÀA]\s*/i, '').trim() || lines[i + 1]
+            if (lieu) updates.lieuNaissance = lieu.toUpperCase()
+          }
+        }
+      }
+
+      if (scanBack) {
+        const { data: { text: textBack } } = await Tesseract.recognize(scanBack, 'fra')
+        const lines = textBack.split('\n').map(l => l.trim()).filter(Boolean)
+        for (let i = 0; i < lines.length; i++) {
+          if (/ADRESSE/i.test(lines[i])) {
+            const adresse = lines[i].replace(/ADRESSE\s*:?\s*/i, '').trim() || lines[i + 1]
+            if (adresse) updates.adresse = adresse.toUpperCase()
+          }
+        }
+        const foundVille = VILLES.find(v => textBack.toUpperCase().includes(v))
+        if (foundVille) updates.ville = foundVille
+      }
+
+      if (scanFront) {
+        const { data: { text: textAr } } = await Tesseract.recognize(scanFront, 'ara')
+        const arLines = textAr.split('\n').map(l => l.trim()).filter(l => /[؀-ۿ]/.test(l))
+        if (arLines[0]) updates.prenomAr = arLines[0]
+        if (arLines[1]) updates.nomAr = arLines[1]
+      }
+
+      setForm(prev => ({ ...prev, ...updates }))
+      setScanDone(true)
+      setScanOpen(false)
+    } catch (err) {
+      console.error('OCR error:', err)
+    } finally {
+      setScanning(false)
+    }
+  }
+
   function handleClose() {
     setForm(emptyForm)
     setStep(1)
     setShowModal(false)
+    setScanOpen(false)
+    setScanFront(null)
+    setScanBack(null)
+    setScanDone(false)
   }
 
   const step1Valid = form.numeroIdentite && form.prenom && form.nom && form.dateNaissance
@@ -503,6 +580,75 @@ export default function Clients() {
         {/* ─── STEP 1: Identité ─── */}
         {step === 1 && (
           <div>
+            {/* CIN Scanner */}
+            <div className="mb-4">
+              {!scanOpen ? (
+                <button
+                  type="button"
+                  onClick={() => { setScanOpen(true); setScanDone(false) }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 border-2 border-dashed border-amber-300 rounded-xl bg-amber-50 hover:bg-amber-100 transition-colors text-amber-700 text-sm font-semibold"
+                >
+                  <Camera size={15} /> Scanner la CIN pour auto-remplir
+                </button>
+              ) : (
+                <div className="border border-amber-200 rounded-xl bg-amber-50/50 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-amber-700 flex items-center gap-2">
+                      <Camera size={15} /> Scanner la CIN
+                    </span>
+                    <button type="button" onClick={() => setScanOpen(false)} className="text-slate-400 hover:text-slate-600">
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 mb-1.5">Recto (face)</p>
+                      <label className="block cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={e => setScanFront(e.target.files[0] || null)} />
+                        {scanFront ? (
+                          <img src={URL.createObjectURL(scanFront)} alt="recto" className="w-full h-28 object-cover rounded-lg border border-amber-200" />
+                        ) : (
+                          <div className="w-full h-28 border-2 border-dashed border-amber-300 rounded-lg flex flex-col items-center justify-center text-amber-400 hover:bg-amber-50 transition-colors">
+                            <Camera size={22} className="mb-1" />
+                            <span className="text-xs">Cliquer pour importer</span>
+                          </div>
+                        )}
+                      </label>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 mb-1.5">Verso (dos)</p>
+                      <label className="block cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={e => setScanBack(e.target.files[0] || null)} />
+                        {scanBack ? (
+                          <img src={URL.createObjectURL(scanBack)} alt="verso" className="w-full h-28 object-cover rounded-lg border border-amber-200" />
+                        ) : (
+                          <div className="w-full h-28 border-2 border-dashed border-amber-300 rounded-lg flex flex-col items-center justify-center text-amber-400 hover:bg-amber-50 transition-colors">
+                            <Camera size={22} className="mb-1" />
+                            <span className="text-xs">Cliquer pour importer</span>
+                          </div>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleScanCIN}
+                    disabled={(!scanFront && !scanBack) || scanning}
+                    className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                  >
+                    {scanning
+                      ? <><Loader2 size={15} className="animate-spin" /> Analyse en cours...</>
+                      : 'Analyser'}
+                  </button>
+                </div>
+              )}
+              {scanDone && (
+                <div className="flex items-center gap-2 mt-2 text-emerald-600 text-sm font-medium bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-200">
+                  <CheckCircle2 size={15} /> Formulaire rempli automatiquement
+                </div>
+              )}
+            </div>
+
             <div className="mb-2">
               <label className={labelCls}>Référence dossier</label>
               <input
